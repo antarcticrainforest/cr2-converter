@@ -683,6 +683,7 @@ def main() -> None:
     ):
         signal.signal(sig, signal_handler)
     cli()
+    lock_file.unlink()
 
 
 if __name__ == "__main__":
