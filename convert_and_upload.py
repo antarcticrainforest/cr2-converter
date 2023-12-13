@@ -167,7 +167,7 @@ class PhotoUploader:
                 logger.error(error)
                 continue
             if not work_done or self.override:
-                yield file, self.steps
+                yield file, self.steps + ["copy_metadata"]
             else:
                 try:
                     jpg_file, _ = self.jpg_from_raw(
@@ -177,14 +177,14 @@ class PhotoUploader:
                     logger.error(error)
                     continue
                 if not jpg_file.is_file():
-                    yield file, self.steps
+                    yield file, self.steps + ["copy_metadata"]
                 elif (
                     datetime.fromtimestamp(jpg_file.stat().st_mtime)
                     > datetime.fromisoformat(work_done["conversion_timestamp"])
                     or work_done["uploaded"] is False
                 ):
                     if "upload" in self.steps:
-                        yield file, ["upload"]
+                        yield file, ["copy_metadata", "upload"]
 
     def __len__(self) -> int:
         return len(list(self.__iter__()))
@@ -309,7 +309,10 @@ class PhotoUploader:
                 stderr=subprocess.PIPE,
                 check=True,
             )
-        # Copy metadata from CR2 to JPG
+
+    @staticmethod
+    def _copy_metadata(cr2_file: Path, jpg_file: Path) -> None:
+        """Copy metadata from CR2 to JPG."""
         exif_dict = piexif.load(str(cr2_file))
         out_dict: Dict[str, Dict[int, Union[int, str, bytes]]] = {}
         for principal_key in ("0th", "Exif", "1st"):
@@ -445,6 +448,9 @@ class PhotoUploader:
             except Exception as error:
                 logger.error(error)
                 return
+        if "copy_metadata" in todo:
+            logger.info("Augmenting jpg meta data")
+            self._copy_metadata(input_file, jpg_file)
         uploaded = False
         if "upload" in todo:
             logger.info("Uploading %s", jpg_file.name)
@@ -481,7 +487,8 @@ class PhotoUploader:
                     "albumId": album_id,
                     "newMediaItems": [
                         {
-                            "description": f"uploaded by {self.hostname} for {APP}",
+                            "description": f"uploaded {photo_path.name} by "
+                            f"{self.hostname} for {APP}",
                             "simpleMediaItem": {
                                 "uploadToken": upload_token.content.decode(),
                             },
