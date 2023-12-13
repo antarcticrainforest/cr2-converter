@@ -2,7 +2,6 @@
 
 import argparse
 from datetime import datetime, timedelta
-from functools import cached_property
 import json
 import logging
 from pathlib import Path
@@ -352,7 +351,7 @@ class PhotoUploader:
         token_file.write_text(credentials.refresh_token)
         token_file.chmod(0o600)
 
-    @cached_property
+    @property
     def _photo_upload_token_file(self) -> Path:
         token_file = self.user_data_dir / "photoupload.token"
         token_file.touch(0o600)
@@ -380,12 +379,12 @@ class PhotoUploader:
         self._reload = False
         return self._db
 
-    @cached_property
+    @property
     def database_file(self) -> Path:
         """Define the sqlite database file where processed files are stored."""
         return self.user_data_dir / "processed_files.db"
 
-    @cached_property
+    @property
     def hostname(self) -> str:
         """Get the hostname of the current machine."""
         return gethostname()
@@ -405,7 +404,7 @@ class PhotoUploader:
             self._token = creds.token
         return self._token
 
-    @cached_property
+    @property
     def user_config(self) -> Dict[str, str]:
         """Read the general user config."""
         return cast(
