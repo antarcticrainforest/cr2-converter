@@ -103,7 +103,7 @@ files to Google Photos.
 
 ## pCloud Sync Feature
 
-The script includes a feature to sync raw photos (.cr2 files) to a pCloud account.
+The script includes a feature to sync raw photos (.cr2 files) to a [pCloud account](https://www.pcloud.com).
 The script will only sync file with your pcloud account if run in daemon:
 
 ```console
