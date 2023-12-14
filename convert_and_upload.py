@@ -539,6 +539,12 @@ class PhotoUploader:
         for file, metadata in pcloud_files.items():
             if not (raw_path / file).is_file():
                 files_to_download.append(pcloud_folder / file)
+        if files_to_download:
+            logger.info(
+                "Downloading %i files from pcloud", len(files_to_download)
+            )
+        else:
+            logger.info("No files to download from pcloud")
         for file in tqdm(files_to_download, desc="Downloading files"):
             fd = pcloud.file_open(path=str(file), flags=api.O_CREAT).get("fd")
             try:
@@ -548,6 +554,11 @@ class PhotoUploader:
                 )
             finally:
                 pcloud.file_close(fd=fd)
+        if files_to_upload:
+            logger.info("Uploading %i files to pcloud", len(files_to_download))
+        else:
+            logger.info("No files to upload to pcloud")
+
         for file in tqdm(files_to_upload, desc="Uploading files"):
             pcloud.uploadfile(files=[str(file)], folderid=folderid)
 
