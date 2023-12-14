@@ -37,6 +37,7 @@ logging.basicConfig(
     format="%(name)s - %(levelname)s - %(message)s", level=logging.ERROR
 )
 logger = logging.getLogger(APP)
+logging.getLogger("pcloud").setLevel(logging.WARNING)
 
 
 DbType = TypedDict(
@@ -543,9 +544,9 @@ class PhotoUploader:
             logger.info(
                 "Downloading %i files from pcloud", len(files_to_download)
             )
-        else:
-            logger.info("No files to download from pcloud")
-        for file in tqdm(files_to_download, desc="Downloading files"):
+        for file in tqdm(
+            files_to_download, desc="Downloading files", leave=False
+        ):
             fd = pcloud.file_open(path=str(file), flags=api.O_CREAT).get("fd")
             try:
                 count = pcloud.file_size(fd=fd).get("size")
@@ -556,10 +557,8 @@ class PhotoUploader:
                 pcloud.file_close(fd=fd)
         if files_to_upload:
             logger.info("Uploading %i files to pcloud", len(files_to_download))
-        else:
-            logger.info("No files to upload to pcloud")
 
-        for file in tqdm(files_to_upload, desc="Uploading files"):
+        for file in tqdm(files_to_upload, desc="Uploading files", leave=False):
             pcloud.uploadfile(files=[str(file)], folderid=folderid)
 
     def upload_photo(self, photo_path: Path) -> bool:
