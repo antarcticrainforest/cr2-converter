@@ -101,9 +101,7 @@ def complete(text: str, state: int) -> Optional[str]:
     Returns:
     - str or None: The next possible completion for the input text.
     """
-    files: List[Optional[str]] = [
-        f.name for f in Path().iterdir() if f.is_dir()
-    ]
+    files: List[Optional[str]] = [f.name for f in Path().iterdir() if f.is_dir()]
     return (files + [None])[state]
 
 
@@ -229,9 +227,7 @@ class PhotoUploader:
         conn = sqlite3.connect(self.database_file)
         cursor = conn.cursor()
         if jpg_file:
-            conversion_timestamp = datetime.fromtimestamp(
-                jpg_file.stat().st_mtime
-            )
+            conversion_timestamp = datetime.fromtimestamp(jpg_file.stat().st_mtime)
         else:
             conversion_timestamp = None
         cursor.execute(
@@ -364,9 +360,7 @@ class PhotoUploader:
         ][0]
         c_date, _, c_time = tags["Exif"][num].decode().partition(" ")
         if c_date and c_time:
-            return datetime.fromisoformat(
-                f"{c_date.replace(':', '-')}T{c_time}"
-            )
+            return datetime.fromisoformat(f"{c_date.replace(':', '-')}T{c_time}")
         return None
 
     @classmethod
@@ -449,9 +443,9 @@ class PhotoUploader:
     ) -> Tuple[Path, datetime]:
         """Construct the filename for the jpg output file."""
         if not c_time:
-            c_time = self._get_capture_time(
-                cr2_file
-            ) or datetime.fromtimestamp(cr2_file.stat().st_ctime)
+            c_time = self._get_capture_time(cr2_file) or datetime.fromtimestamp(
+                cr2_file.stat().st_ctime
+            )
         jpg_dir = Path(self.user_config["Directories"]["JPG"]).expanduser()
         return (
             jpg_dir / str(c_time.year) / cr2_file.with_suffix(".jpg").name,
@@ -460,9 +454,7 @@ class PhotoUploader:
 
     def process_file(self, input_file: Path, todo: List[str]) -> None:
         """Process the cr2 file according to things that have to be done."""
-        logger.info(
-            "Processing file %s using %s", input_file.name, ", ".join(todo)
-        )
+        logger.info("Processing file %s using %s", input_file.name, ", ".join(todo))
         try:
             jpg_file, capture_time = self.jpg_from_raw(input_file)
         except Exception as error:
@@ -503,9 +495,7 @@ class PhotoUploader:
                 (self.user_data_dir / "passwd.pcloud").read_bytes()
             ).decode()
         except FileNotFoundError:
-            logger.critical(
-                "Could not read password, use %s --init", sys.argv[0]
-            )
+            logger.critical("Could not read password, use %s --init", sys.argv[0])
             return
         pcloud = PyCloud(
             self.user_config["Pcloud"]["username"],
@@ -513,9 +503,7 @@ class PhotoUploader:
             endpoint="nearest",
         )
         raw_path = Path(self.user_config["Directories"]["CR2"])
-        pcloud_folder = (
-            Path(self.user_config["Pcloud"]["folder"]) / raw_path.name
-        )
+        pcloud_folder = Path(self.user_config["Pcloud"]["folder"]) / raw_path.name
         folderid = (
             pcloud.createfolderifnotexists(
                 path=str(pcloud_folder),
@@ -543,9 +531,7 @@ class PhotoUploader:
             fd = pcloud.file_open(path=str(file), flags=api.O_CREAT).get("fd")
             try:
                 count = pcloud.file_size(fd=fd).get("size")
-                (raw_path / file.name).write_bytes(
-                    pcloud.file_read(fd=fd, count=count)
-                )
+                (raw_path / file.name).write_bytes(pcloud.file_read(fd=fd, count=count))
             finally:
                 pcloud.file_close(fd=fd)
         for file in tqdm(files_to_upload, desc="Uploading files"):
@@ -631,25 +617,29 @@ class PhotoUploader:
         config = tomlkit.loads(config_file.read_text())
         for key, value in config.get("Directories", {}).items():
             config["Directories"][key] = (
-                input_path(f"Enter path to {key} directory [{value}]:")
-                or value
+                input_path(f"Enter path to {key} directory [{value}]:") or value
             )
         use_pcloud = input(
-            "Do you want to use pcloud for backing up your "
-            "CR2 photos? [y|N] "
+            "Do you want to use pcloud for backing up your " "CR2 photos? [y|N] "
         ).lower()
         password_file = cls.user_data_dir / "passwd.pcloud"
         if use_pcloud.startswith("y"):
             config["Pcloud"]["use_pcloud"] = True
-            config["Pcloud"]["username"] = input(
-                "Set pcloud username that should be used: "
-                f"[{config['Pcloud']['username']}] "
+            config["Pcloud"]["username"] = (
+                input(
+                    "Set pcloud username that should be used: "
+                    f"[{config['Pcloud']['username']}] "
+                )
+                or config["Pcloud"]["username"]
             )
             password_file.write_bytes(get_password())
             password_file.chmod(0o600)
-            config["Pcloud"]["folder"] = input(
-                "Set the parent folder where the backup is placed to:"
-                f" [{config['Pcloud']['folder']}] "
+            config["Pcloud"]["folder"] = (
+                input(
+                    "Set the parent folder where the backup is placed to:"
+                    f" [{config['Pcloud']['folder']}] "
+                )
+                or config["Pcloud"]["folder"]
             )
         else:
             config["Pcloud"]["use_pcloud"] = False
