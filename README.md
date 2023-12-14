@@ -1,4 +1,4 @@
-# cr2 Converter
+# Raw Converter
 A Python script to convert RAW photos taken from an SLR camera to JPG and upload the converted files to Google Photos.
 
 ## Installation
@@ -17,7 +17,7 @@ python3 -m pip install -r requirements.txt
 
 ## Google Cloud App Setup
 
-To use this script, you'll need to retrieve OAuth credentials and configure the destination directories for CR2 and JPG files.
+To use this script, you'll need to retrieve OAuth credentials and configure the destination directories for RAW and JPG files.
 Obtaining OAuth Credentials
 
 1.    Go to the Google Developers Console.
@@ -72,24 +72,24 @@ For advanced configurations, edit ~/.config/photo-uploader/config.toml:
 ```toml
 [Directories]
 # This is the general configuration part, you can set the paths of the
-# CR2 files that are converted to JPG as well as the paths where the JPG
+# RAW files that are converted to JPG as well as the paths where the JPG
 # are stored
 
-# Set the location of the CR2 files
-CR2 = ""
+# Set the location of the RAW files
+RAW = ""
 
 # Set the directory where the converted JPG files should be saved to
 JPG = ""
 
 [Pcloud]
 # If you have a pcloud account, you can set here the backup destination
-# of the CR2 raw camera files.
+# of the RAW raw camera files.
 # Note: The password will be stored in a separate file. In order to set or
 # update you must run the `convert_and_upload` script with the --init flag.
 #
 use_pcloud = true
 # Set your pcloud user name, leave blank if you don't have one or don't whish
-# to backup the CR2 files
+# to backup the RAW files
 username = ""
 
 # Set the parent folder where the backup should be placed in on pcloud
@@ -103,13 +103,13 @@ files to Google Photos.
 
 ## pCloud Sync Feature
 
-The script includes a feature to sync raw photos (.cr2 files) to a [pCloud account](https://www.pcloud.com).
+The script includes a feature to sync raw photos to a [pCloud account](https://www.pcloud.com).
 The script will only sync file with your pcloud account if run in daemon:
 
 ```console
 python3 convert_and_upload.py --daemon
 ```
-The script will sync the raw photos (files with the .cr2 extension) to your
+The script will sync the raw photos to your
 pCloud storage using the provided pCloud account details.
 
 Make sure to set up the pCloud configuration properly using the --init flag
