@@ -1,9 +1,11 @@
 appdirs
-argparse
+cryptography
 google-auth-oauthlib
 google-auth
 google-api-python-client
+pcloud
 piexif
+pyopenssl
 requests
 tqdm
 tomlkit

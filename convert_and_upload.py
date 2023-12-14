@@ -1,7 +1,9 @@
 """Scrtip that uploads photos to google photos."""
 
 import argparse
+import base64
 from datetime import datetime, timedelta
+from getpass import getpass
 import json
 import logging
 from pathlib import Path
@@ -21,6 +23,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import AuthorizedSession, Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from pcloud import PyCloud, api
 import piexif
 import sqlite3
 import requests
@@ -56,7 +59,33 @@ CR2 = ""
 # Set the directory where the converted JPG files should be saved to
 JPG = ""
 
+[Pcloud]
+# If you have a pcloud account, you can set here the backup destination
+# of the CR2 raw camera files.
+#
+# Note: The password will be stored in a separate file. In order to set or
+# update you must run the `convert_and_upload` script with the --init flag.
+#
+#
+use_pcloud = false
+# Set your pcloud user name, leave blank if you don't have one or don't whish
+# to backup the CR2 files
+username = ""
+
+# Set the parent folder where the backup should be placed in on pcloud
+folder = "/Camera"
 """
+
+
+def get_password() -> bytes:
+    """Ask the user for a password."""
+    password1 = getpass("Enter your pcloud password: ")
+    password2 = getpass("Re-enter your pcloud password: ")
+    while password1 != password2:
+        print("Passwords do not match!")
+        password1 = getpass("Enter your pcloud password: ")
+        password2 = getpass("Re-enter your pcloud password: ")
+    return base64.b64encode(password1.encode())
 
 
 def complete(text: str, state: int) -> Optional[str]:
@@ -151,7 +180,7 @@ class PhotoUploader:
         self._reload = True
         try:
             inp_files = inp_files or Path(
-                self.user_config["CR2"]
+                self.user_config["Directories"]["CR2"]
             ).expanduser().rglob("*.CR2")
         except FileNotFoundError:
             inp_files = []
@@ -411,10 +440,8 @@ class PhotoUploader:
     def user_config(self) -> Dict[str, str]:
         """Read the general user config."""
         return cast(
-            Dict[str, str],
-            tomlkit.loads((self.user_config_dir / "config.toml").read_text())[
-                "Directories"
-            ],
+            Dict[str, Dict[str, str]],
+            tomlkit.loads((self.user_config_dir / "config.toml").read_text()),
         )
 
     def jpg_from_raw(
@@ -425,7 +452,7 @@ class PhotoUploader:
             c_time = self._get_capture_time(
                 cr2_file
             ) or datetime.fromtimestamp(cr2_file.stat().st_ctime)
-        jpg_dir = Path(self.user_config["JPG"]).expanduser()
+        jpg_dir = Path(self.user_config["Directories"]["JPG"]).expanduser()
         return (
             jpg_dir / str(c_time.year) / cr2_file.with_suffix(".jpg").name,
             c_time,
@@ -466,6 +493,63 @@ class PhotoUploader:
                 logger.warning("Could not upload %s", jpg_file.name)
         logger.info("Done, adding all to database")
         self._add_to_database(input_file, capture_time, jpg_file, uploaded)
+
+    def sync_to_pcloud(self) -> None:
+        """Sync all cr2 photos to pcloud."""
+        if not self.user_config["Pcloud"]["use_pcloud"]:
+            return
+        try:
+            password = base64.b64decode(
+                (self.user_data_dir / "passwd.pcloud").read_bytes()
+            ).decode()
+        except FileNotFoundError:
+            logger.critical(
+                "Could not read password, use %s --init", sys.argv[0]
+            )
+            return
+        pcloud = PyCloud(
+            self.user_config["Pcloud"]["username"],
+            password,
+            endpoint="nearest",
+        )
+        raw_path = Path(self.user_config["Directories"]["CR2"])
+        pcloud_folder = (
+            Path(self.user_config["Pcloud"]["folder"]) / raw_path.name
+        )
+        folderid = (
+            pcloud.createfolderifnotexists(
+                path=str(pcloud_folder),
+                folderid=0,
+            )
+            .get("metadata", {})
+            .get("folderid")
+        )
+        pcloud_files = {
+            p["name"]: p
+            for p in pcloud.listfolder(folderid=folderid)
+            .get("metadata", {})
+            .get("contents", [])
+        }
+        files_to_upload = [
+            f
+            for f in raw_path.rglob("*.CR2")
+            if f.stat().st_size != pcloud_files.get(f.name, {}).get("size", 0)
+        ]
+        files_to_download = []
+        for file, metadata in pcloud_files.items():
+            if not (raw_path / file).is_file():
+                files_to_download.append(pcloud_folder / file)
+        for file in tqdm(files_to_download, desc="Downloading files"):
+            fd = pcloud.file_open(path=str(file), flags=api.O_CREAT).get("fd")
+            try:
+                count = pcloud.file_size(fd=fd).get("size")
+                (raw_path / file.name).write_bytes(
+                    pcloud.file_read(fd=fd, count=count)
+                )
+            finally:
+                pcloud.file_close(fd=fd)
+        for file in tqdm(files_to_upload, desc="Uploading files"):
+            pcloud.uploadfile(files=[str(file)], folderid=folderid)
 
     def upload_photo(self, photo_path: Path) -> bool:
         """Upload the photo to google."""
@@ -545,11 +629,30 @@ class PhotoUploader:
             config_file.write_text(ConfigText)
 
         config = tomlkit.loads(config_file.read_text())
-        for key, value in config.get("general", {}).items():
-            config["general"][key] = (
+        for key, value in config.get("Directories", {}).items():
+            config["Directories"][key] = (
                 input_path(f"Enter path to {key} directory [{value}]:")
                 or value
             )
+        use_pcloud = input(
+            "Do you want to use pcloud for backing up your "
+            "CR2 photos? [y|N] "
+        ).lower()
+        password_file = cls.user_data_dir / "passwd.pcloud"
+        if use_pcloud.startswith("y"):
+            config["Pcloud"]["use_pcloud"] = True
+            config["Pcloud"]["username"] = input(
+                "Set pcloud username that should be used: "
+                f"[{config['Pcloud']['username']}] "
+            )
+            password_file.write_bytes(get_password())
+            password_file.chmod(0o600)
+            config["Pcloud"]["folder"] = input(
+                "Set the parent folder where the backup is placed to:"
+                f" [{config['Pcloud']['folder']}] "
+            )
+        else:
+            config["Pcloud"]["use_pcloud"] = False
         config_file.write_text(tomlkit.dumps(config))
         if google_credentials is not None:
             token_file = cls.user_data_dir / "photoupload.token"
@@ -636,10 +739,10 @@ def cli() -> None:
     )
     args = parser.parse_args()
     logger.setLevel(max(logging.ERROR - (10 + args.v * 10), 10))
-    lock_file.touch()
     if args.init is True:
         PhotoUploader.initialise(args.config, args.port)
         return
+    lock_file.touch()
     if args.daemon is False:
         photos = PhotoUploader(
             start=args.start,
@@ -661,6 +764,7 @@ def cli() -> None:
         while True:
             for path, todo in photos:
                 photos.process_file(path, todo)
+            photos.sync_to_pcloud()
             time.sleep(60)
 
 
@@ -689,7 +793,8 @@ def main() -> None:
     ):
         signal.signal(sig, signal_handler)
     cli()
-    lock_file.unlink()
+    if lock_file.is_file():
+        lock_file.unlink()
 
 
 if __name__ == "__main__":
