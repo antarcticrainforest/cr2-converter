@@ -51,18 +51,18 @@ DbType = TypedDict(
 
 ConfigText: str = """[Directories]
 # This is the general configuration part, you can set the paths of the
-# CR2 files that are converted to JPG as well as the paths where the JPG
+# RAW files that are converted to JPG as well as the paths where the JPG
 # are stored
 
-# Set the location of the CR2 files
-CR2 = ""
+# Set the location of the RAW files
+RAW = ""
 
 # Set the directory where the converted JPG files should be saved to
 JPG = ""
 
 [Pcloud]
 # If you have a pcloud account, you can set here the backup destination
-# of the CR2 raw camera files.
+# of the RAW raw camera files.
 #
 # Note: The password will be stored in a separate file. In order to set or
 # update you must run the `convert_and_upload` script with the --init flag.
@@ -70,12 +70,67 @@ JPG = ""
 #
 use_pcloud = false
 # Set your pcloud user name, leave blank if you don't have one or don't whish
-# to backup the CR2 files
+# to backup the RAW files
 username = ""
 
 # Set the parent folder where the backup should be placed in on pcloud
 folder = "/Camera"
 """
+
+RAW_FORMATS = (
+    ".3fr",
+    ".ari",
+    ".arw",
+    ".bay",
+    ".braw",
+    ".crw",
+    ".cr2",
+    ".cr3",
+    ".cap",
+    ".dcs",
+    ".dcr",
+    ".dng",
+    ".drf",
+    ".eip",
+    ".erf",
+    ".fff",
+    ".gpr",
+    ".iiq",
+    ".k25",
+    ".kdc",
+    ".mdc",
+    ".mef",
+    ".mos",
+    ".mrw",
+    ".nef",
+    ".nrw",
+    ".obm",
+    ".orf",
+    ".pef",
+    ".ptx",
+    ".pxn",
+    ".r3d",
+    ".raf",
+    ".raw",
+    ".rwl",
+    ".rw2",
+    ".rwz",
+    ".sr2",
+    ".srf",
+    ".srw",
+    ".tif",
+    ".x3f",
+)
+
+
+def rglob(input_dir: Union[Path, str]) -> Iterator[Path]:
+    """Recursively find all possible raw formats."""
+    input_dir = Path(input_dir).expanduser()
+    if not input_dir.is_dir():
+        raise FileNotFoundError("Directory does not exist.")
+    for suffix in RAW_FORMATS + tuple(map(str.upper, RAW_FORMATS)):
+        for file_name in input_dir.rglob(f"*{suffix}"):
+            yield file_name
 
 
 def get_password() -> bytes:
@@ -175,14 +230,10 @@ class PhotoUploader:
         self.token_expiry = datetime.utcnow() - timedelta(minutes=10)
         self._create_database()
 
-    def __iter__(
-        self, inp_files: Optional[Iterable[Path]] = None
-    ) -> Iterator[Tuple[Path, List[str]]]:
+    def __iter__(self) -> Iterator[Tuple[Path, List[str]]]:
         self._reload = True
         try:
-            inp_files = inp_files or Path(
-                self.user_config["Directories"]["CR2"]
-            ).expanduser().rglob("*.CR2")
+            inp_files = rglob(self.user_config["Directories"]["RAW"])
         except FileNotFoundError:
             inp_files = []
         for file in sorted(inp_files):
@@ -299,7 +350,7 @@ class PhotoUploader:
         conn.commit()
         conn.close()
 
-    def _convert_to_jpg(self, cr2_file: Path) -> None:
+    def _convert_to_jpg(self, raw_file: Path) -> None:
         command = [
             "dcraw",
             "-c",
@@ -309,9 +360,9 @@ class PhotoUploader:
             "-q",
             "3",
             "-T",
-            str(cr2_file),
+            str(raw_file),
         ]
-        jpg_file, _ = self.jpg_from_raw(cr2_file)
+        jpg_file, _ = self.jpg_from_raw(raw_file)
         jpg_file.parent.mkdir(exist_ok=True, parents=True)
         convert_args = [
             "-auto-level",
@@ -341,9 +392,9 @@ class PhotoUploader:
             )
 
     @staticmethod
-    def _copy_metadata(cr2_file: Path, jpg_file: Path) -> None:
-        """Copy metadata from CR2 to JPG."""
-        exif_dict = piexif.load(str(cr2_file))
+    def _copy_metadata(raw_file: Path, jpg_file: Path) -> None:
+        """Copy metadata from RAW to JPG."""
+        exif_dict = piexif.load(str(raw_file))
         out_dict: Dict[str, Dict[int, Union[int, str, bytes]]] = {}
         for principal_key in ("0th", "Exif", "1st"):
             out_dict[principal_key] = {}
@@ -356,8 +407,8 @@ class PhotoUploader:
             piexif.insert(exif_bytes, str(jpg_file))
 
     @staticmethod
-    def _get_capture_time(cr2_file: Path) -> Optional[datetime]:
-        tags = piexif.load(str(cr2_file))
+    def _get_capture_time(raw_file: Path) -> Optional[datetime]:
+        tags = piexif.load(str(raw_file))
         num = [
             n
             for n, v in piexif.TAGS["Exif"].items()
@@ -446,21 +497,21 @@ class PhotoUploader:
         )
 
     def jpg_from_raw(
-        self, cr2_file: Path, c_time: Optional[datetime] = None
+        self, raw_file: Path, c_time: Optional[datetime] = None
     ) -> Tuple[Path, datetime]:
         """Construct the filename for the jpg output file."""
         if not c_time:
             c_time = self._get_capture_time(
-                cr2_file
-            ) or datetime.fromtimestamp(cr2_file.stat().st_ctime)
+                raw_file
+            ) or datetime.fromtimestamp(raw_file.stat().st_ctime)
         jpg_dir = Path(self.user_config["Directories"]["JPG"]).expanduser()
         return (
-            jpg_dir / str(c_time.year) / cr2_file.with_suffix(".jpg").name,
+            jpg_dir / str(c_time.year) / raw_file.with_suffix(".jpg").name,
             c_time,
         )
 
     def process_file(self, input_file: Path, todo: List[str]) -> None:
-        """Process the cr2 file according to things that have to be done."""
+        """Process the raw file according to things that have to be done."""
         logger.info(
             "Processing file %s using %s", input_file.name, ", ".join(todo)
         )
@@ -496,7 +547,7 @@ class PhotoUploader:
         self._add_to_database(input_file, capture_time, jpg_file, uploaded)
 
     def sync_to_pcloud(self) -> None:
-        """Sync all cr2 photos to pcloud."""
+        """Sync all raw photos to pcloud."""
         if not self.user_config["Pcloud"]["use_pcloud"]:
             return
         try:
@@ -513,7 +564,7 @@ class PhotoUploader:
             password,
             endpoint="nearest",
         )
-        raw_path = Path(self.user_config["Directories"]["CR2"])
+        raw_path = Path(self.user_config["Directories"]["RAW"])
         pcloud_folder = (
             Path(self.user_config["Pcloud"]["folder"]) / raw_path.name
         )
@@ -533,7 +584,7 @@ class PhotoUploader:
         }
         files_to_upload = [
             f
-            for f in raw_path.rglob("*.CR2")
+            for f in rglob(raw_path)
             if f.stat().st_size != pcloud_files.get(f.name, {}).get("size", 0)
         ]
         files_to_download = []
@@ -646,7 +697,7 @@ class PhotoUploader:
             )
         use_pcloud = input(
             "Do you want to use pcloud for backing up your "
-            "CR2 photos? [y|N] "
+            "RAW photos? [y|N] "
         ).lower()
         password_file = cls.user_data_dir / "passwd.pcloud"
         if use_pcloud.startswith("y"):
