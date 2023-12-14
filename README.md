@@ -3,10 +3,26 @@ A Python script to convert RAW photos taken from an SLR camera to JPG and upload
 
 ## Installation
 
-Clone the repository:
+This script is intended to be applied on Linux systems. Since the script
+is a python script you will need `python3.6` or higher.
+Image conversion is based on the tools `dcraw` and `imagemagick`. Hence
+you will have to install `dcraw` and `imagemagick` on your system.
+For example:
 
 ```console
-git clone https://github.com/yourusername/photo-uploader.git
+apt install dcraw imagemagick
+```
+for Debian based systems or
+
+```console
+pacman -S dcraw imagemagick
+```
+for arch based systems.
+
+Once you have successfully installed the packages you can clone the repository:
+
+```console
+git clone https://github.com/antarcticrainforest/raw-converter.git
 ```
 
 Install required dependencies:
