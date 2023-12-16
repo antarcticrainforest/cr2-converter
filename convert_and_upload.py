@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from getpass import getpass
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import readline
 import signal
@@ -34,8 +35,16 @@ APP = "photo-uploader"
 lock_file = Path(f"/tmp/{APP}.lock")
 
 logging.basicConfig(
-    format="%(name)s - %(levelname)s - %(message)s", level=logging.ERROR
+    format="%(name)s - %(asctime)s - %(levelname)s: %(message)s",
+    level=logging.ERROR,
+    datefmt="[%Y-%m-%dT%H:%M:%S]",
 )
+logger_format = logging.Formatter(
+    "%(name)s - %(asctime)s - %(levelname)s: %(message)s",
+    datefmt="[%Y-%m-%dT%H:%M:%S]",
+)
+
+
 logger = logging.getLogger(APP)
 logging.getLogger("pcloud").setLevel(logging.WARNING)
 
@@ -121,6 +130,24 @@ RAW_FORMATS = (
     ".tif",
     ".x3f",
 )
+
+
+def add_file_handle(log_level: int = logging.INFO) -> None:
+    """Add a file log handle to the logger."""
+    base_name = APP
+    log_dir = Path(appdirs.user_log_dir(base_name))
+    log_dir.mkdir(exist_ok=True, parents=True)
+    logger_file_handle = RotatingFileHandler(
+        log_dir / f"{base_name}.log",
+        mode="a",
+        maxBytes=5 * 1024**2,
+        backupCount=5,
+        encoding="utf-8",
+        delay=False,
+    )
+    logger_file_handle.setFormatter(logger_format)
+    logger_file_handle.setLevel(min(log_level, logging.INFO))
+    logger.addHandler(logger_file_handle)
 
 
 def rglob(input_dir: Union[Path, str]) -> Iterator[Path]:
@@ -831,7 +858,10 @@ def cli() -> None:
         while True:
             for path, todo in photos:
                 photos.process_file(path, todo)
-            photos.sync_to_pcloud()
+            try:
+                photos.sync_to_pcloud()
+            except Exception as error:
+                logger.error("Pcloud sync failed: %s", error)
             time.sleep(60)
 
 
@@ -859,9 +889,18 @@ def main() -> None:
         signal.SIGQUIT,
     ):
         signal.signal(sig, signal_handler)
-    cli()
+    add_file_handle()
+    exit_status = 0
+    try:
+        cli()
+    except KeyboardInterrupt:
+        pass
+    except Exception as error:
+        logger.exception(error)
+        exit_status = 1
     if lock_file.is_file():
         lock_file.unlink()
+    sys.exit(exit_status)
 
 
 if __name__ == "__main__":
