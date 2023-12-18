@@ -184,9 +184,7 @@ def complete(text: str, state: int) -> Optional[str]:
     Returns:
     - str or None: The next possible completion for the input text.
     """
-    files: List[Optional[str]] = [
-        f.name for f in Path().iterdir() if f.is_dir()
-    ]
+    files: List[Optional[str]] = [f.name for f in Path().iterdir() if f.is_dir()]
     return (files + [None])[state]
 
 
@@ -311,9 +309,7 @@ class PhotoUploader:
         conn = sqlite3.connect(self.database_file)
         cursor = conn.cursor()
         if jpg_file:
-            conversion_timestamp = datetime.fromtimestamp(
-                jpg_file.stat().st_mtime
-            )
+            conversion_timestamp = datetime.fromtimestamp(jpg_file.stat().st_mtime)
         else:
             conversion_timestamp = None
         cursor.execute(
@@ -446,9 +442,7 @@ class PhotoUploader:
         ][0]
         c_date, _, c_time = tags["Exif"][num].decode().partition(" ")
         if c_date and c_time:
-            return datetime.fromisoformat(
-                f"{c_date.replace(':', '-')}T{c_time}"
-            )
+            return datetime.fromisoformat(f"{c_date.replace(':', '-')}T{c_time}")
         return None
 
     @classmethod
@@ -531,9 +525,9 @@ class PhotoUploader:
     ) -> Tuple[Path, datetime]:
         """Construct the filename for the jpg output file."""
         if not c_time:
-            c_time = self._get_capture_time(
-                raw_file
-            ) or datetime.fromtimestamp(raw_file.stat().st_ctime)
+            c_time = self._get_capture_time(raw_file) or datetime.fromtimestamp(
+                raw_file.stat().st_ctime
+            )
         jpg_dir = Path(self.user_config["Directories"]["JPG"]).expanduser()
         return (
             jpg_dir / str(c_time.year) / raw_file.with_suffix(".jpg").name,
@@ -554,9 +548,7 @@ class PhotoUploader:
         -------
         int: 0 if now work on any file was done, 1 if work was done.
         """
-        logger.info(
-            "Processing file %s using %s", input_file.name, ", ".join(todo)
-        )
+        logger.info("Processing file %s using %s", input_file.name, ", ".join(todo))
         process_steps = 0
         try:
             jpg_file, capture_time = self.jpg_from_raw(input_file)
@@ -606,9 +598,7 @@ class PhotoUploader:
                 (self.user_data_dir / "passwd.pcloud").read_bytes()
             ).decode()
         except FileNotFoundError:
-            logger.critical(
-                "Could not read password, use %s --init", sys.argv[0]
-            )
+            logger.critical("Could not read password, use %s --init", sys.argv[0])
             return
         pcloud = PyCloud(
             self.user_config["Pcloud"]["username"],
@@ -616,9 +606,7 @@ class PhotoUploader:
             endpoint="nearest",
         )
         raw_path = Path(self.user_config["Directories"]["RAW"])
-        pcloud_folder = (
-            Path(self.user_config["Pcloud"]["folder"]) / raw_path.name
-        )
+        pcloud_folder = Path(self.user_config["Pcloud"]["folder"]) / raw_path.name
         folderid = (
             pcloud.createfolderifnotexists(
                 path=str(pcloud_folder),
@@ -643,18 +631,12 @@ class PhotoUploader:
             if not (raw_path / file).is_file():
                 files_to_download.append(pcloud_folder / file)
         if files_to_download:
-            logger.info(
-                "Downloading %i files from pcloud", len(files_to_download)
-            )
-        for file in tqdm(
-            files_to_download, desc="Downloading files", leave=False
-        ):
+            logger.info("Downloading %i files from pcloud", len(files_to_download))
+        for file in tqdm(files_to_download, desc="Downloading files", leave=False):
             fd = pcloud.file_open(path=str(file), flags=api.O_CREAT).get("fd")
             try:
                 count = pcloud.file_size(fd=fd).get("size")
-                (raw_path / file.name).write_bytes(
-                    pcloud.file_read(fd=fd, count=count)
-                )
+                (raw_path / file.name).write_bytes(pcloud.file_read(fd=fd, count=count))
             finally:
                 pcloud.file_close(fd=fd)
         if files_to_upload:
@@ -756,12 +738,10 @@ class PhotoUploader:
         config = tomlkit.loads(config_file.read_text())
         for key, value in config.get("Directories", {}).items():
             config["Directories"][key] = (
-                input_path(f"Enter path to {key} directory [{value}]:")
-                or value
+                input_path(f"Enter path to {key} directory [{value}]:") or value
             )
         use_pcloud = input(
-            "Do you want to use pcloud for backing up your "
-            "RAW photos? [y|N] "
+            "Do you want to use pcloud for backing up your " "RAW photos? [y|N] "
         ).lower()
         password_file = cls.user_data_dir / "passwd.pcloud"
         if use_pcloud.startswith("y"):
@@ -892,16 +872,13 @@ def cli() -> None:
             steps=args.steps,
         )
         logger.setLevel(logging.INFO)
-        num_processed_files = 1
         while True:
             for path, todo in photos:
-                num_processed_files += photos.process_file(path, todo)
-            if num_processed_files > 0:
-                try:
-                    photos.sync_to_pcloud()
-                except Exception as error:
-                    logger.error("Pcloud sync failed: %s", error)
-            num_processed_files = 0
+                _ = photos.process_file(path, todo)
+            try:
+                photos.sync_to_pcloud()
+            except Exception as error:
+                logger.error("Pcloud sync failed: %s", error)
             time.sleep(60)
 
 
