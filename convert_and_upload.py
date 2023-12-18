@@ -13,10 +13,11 @@ import signal
 from socket import gethostname
 import subprocess
 import sys
+import sqlite3
 from tempfile import NamedTemporaryFile
 import time
 from types import FrameType
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union, cast
+from typing import Dict, Iterator, List, Optional, Tuple, Union, cast
 from typing_extensions import TypedDict
 
 import appdirs
@@ -26,7 +27,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from pcloud import PyCloud, api
 import piexif
-import sqlite3
 import requests
 import tomlkit
 from tqdm import tqdm
@@ -215,16 +215,19 @@ class PhotoUploader:
     Parameters
     ----------
 
-    photo_path: str
-        Path(s) to the photo file(s) you want to upload.
     config: Path, default: .google-oauth.json
         Path to the service account credentials JSON file.
     album: str, default: Canon
         ID of the Google Photos album where you want to upload the photo.
-    init: bool, default: False
-        Initialise the google oauth procedure only.
-    port: int, default 8080
-        Set the port the oauth initialisation should be running
+    start: datetime, default: None
+        Start date for selecting photos,
+    end: datetime, default: None
+        Start date for selecting photos,
+    steps: list[str], default: convert, upload
+        Set the todo items that need to be done.
+    override: bool, default: False
+        Replace existing files.
+
     """
 
     user_data_dir: Path = Path(appdirs.user_data_dir("photo-uploader"))
@@ -516,7 +519,7 @@ class PhotoUploader:
         return self._token
 
     @property
-    def user_config(self) -> Dict[str, str]:
+    def user_config(self) -> Dict[str, Dict[str, str]]:
         """Read the general user config."""
         return cast(
             Dict[str, Dict[str, str]],
@@ -537,26 +540,44 @@ class PhotoUploader:
             c_time,
         )
 
-    def process_file(self, input_file: Path, todo: List[str]) -> None:
-        """Process the raw file according to things that have to be done."""
+    def process_file(self, input_file: Path, todo: List[str]) -> int:
+        """Process the raw file according to things that have to be done.
+
+        Parameters
+        ----------
+        input_file: Path
+            The input raw file that should be processed.
+        todo: list[str]
+            The tasks that should be done.
+
+        Returns
+        -------
+        int: 0 if now work on any file was done, 1 if work was done.
+        """
         logger.info(
             "Processing file %s using %s", input_file.name, ", ".join(todo)
         )
+        process_steps = 0
         try:
             jpg_file, capture_time = self.jpg_from_raw(input_file)
         except Exception as error:
             logger.error(error)
-            return
+            return process_steps
         if "convert" in todo:
             logger.info("Converting %s to JPG", input_file.name)
             try:
                 self._convert_to_jpg(input_file)
             except Exception as error:
                 logger.error(error)
-                return
+                return process_steps
+            process_steps += 1
         if "copy_metadata" in todo:
             logger.info("Augmenting jpg meta data")
-            self._copy_metadata(input_file, jpg_file)
+            try:
+                self._copy_metadata(input_file, jpg_file)
+                process_steps += 1
+            except Exception as error:
+                logger.error(error)
         uploaded = False
         if "upload" in todo:
             logger.info("Uploading %s", jpg_file.name)
@@ -570,8 +591,11 @@ class PhotoUploader:
                         logger.error(error)
             if not uploaded:
                 logger.warning("Could not upload %s", jpg_file.name)
+            else:
+                process_steps += 1
         logger.info("Done, adding all to database")
         self._add_to_database(input_file, capture_time, jpg_file, uploaded)
+        return int(process_steps > 1)
 
     def sync_to_pcloud(self) -> None:
         """Sync all raw photos to pcloud."""
@@ -710,6 +734,19 @@ class PhotoUploader:
     def initialise(
         cls, google_credentials: Optional[Path] = None, port: int = 8080
     ) -> None:
+        """Setup the configuration of the upload script.
+
+        This method should be applied before running the procedure for the
+        first time.
+
+        Parameters
+        ----------
+        google_credentials: Path, default: None
+            Path to the json file holding the google oauth credentials.
+        port: int, default 8080
+            Set the port the oauth initialisation should be running
+        """
+
         for path in cls.user_config_dir, cls.user_data_dir:
             path.mkdir(exist_ok=True, parents=True)
         config_file = cls.user_config_dir / "config.toml"
@@ -855,13 +892,16 @@ def cli() -> None:
             steps=args.steps,
         )
         logger.setLevel(logging.INFO)
+        num_processed_files = 1
         while True:
             for path, todo in photos:
-                photos.process_file(path, todo)
-            try:
-                photos.sync_to_pcloud()
-            except Exception as error:
-                logger.error("Pcloud sync failed: %s", error)
+                num_processed_files += photos.process_file(path, todo)
+            if num_processed_files > 0:
+                try:
+                    photos.sync_to_pcloud()
+                except Exception as error:
+                    logger.error("Pcloud sync failed: %s", error)
+            num_processed_files = 0
             time.sleep(60)
 
 

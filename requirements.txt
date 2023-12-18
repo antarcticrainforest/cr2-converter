@@ -9,3 +9,4 @@ pyopenssl
 requests
 tqdm
 tomlkit
+typing-extensions
