@@ -900,6 +900,12 @@ def cli() -> None:
             except Exception as error:
                 logger.error("Pcloud sync failed: %s", error)
             time.sleep(60)
+            try:
+                token = photos.token
+            except Exception as error:
+                logger.error(
+                    "Something is wrong with the google oauth token %s", error
+                )
 
 
 def signal_handler(sig: int, frame: Optional[FrameType] = None) -> None:
