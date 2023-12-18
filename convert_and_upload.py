@@ -240,8 +240,8 @@ class PhotoUploader:
         steps: List[str] = ["convert", "upload"],
         override: bool = False,
     ) -> None:
-        self._config_path = config or self.user_config_dir / "google_auth.json"
-        credentials = json.loads(config.read_text()).get("installed", {})
+        config = config or self.user_config_dir / "google_auth.json"
+        credentials = json.loads(self._oconfig.read_text()).get("installed", {})
         self.client_id: str = credentials.get("client_id", "")
         self.client_secret: str = credentials.get("client_secret")
         self.album = album
