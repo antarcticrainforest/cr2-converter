@@ -869,6 +869,12 @@ def cli() -> None:
         help="Increase verbosity",
     )
     args = parser.parse_args()
+    if lock_file.is_file():
+        raise SystemExit(
+            f"{lock_file} exists, another process is already running."
+            " If you are sure that there is no other process running,"
+            " You can delete this file."
+        )
     logger.setLevel(max(logging.ERROR - (10 + args.v * 10), 10))
     if args.init is True:
         PhotoUploader.initialise(args.config, args.port)
@@ -901,7 +907,7 @@ def cli() -> None:
                 logger.error("Pcloud sync failed: %s", error)
             time.sleep(60)
             try:
-                token = photos.token
+                _ = photos.token
             except Exception as error:
                 logger.error(
                     "Something is wrong with the google oauth token %s", error
@@ -919,12 +925,6 @@ def signal_handler(sig: int, frame: Optional[FrameType] = None) -> None:
 
 def main() -> None:
     """Wrapper for calling the cli method."""
-    if lock_file.is_file():
-        raise SystemExit(
-            f"{lock_file} exists, another process is already running."
-            " If you are sure that there is no other process running,"
-            " You can delete this file."
-        )
     for sig in (
         signal.SIGTERM,
         signal.SIGABRT,
