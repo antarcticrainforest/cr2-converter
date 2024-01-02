@@ -2,34 +2,33 @@
 
 import argparse
 import base64
-from datetime import datetime, timedelta
-from getpass import getpass
 import json
 import logging
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
 import readline
 import signal
-from socket import gethostname
+import sqlite3
 import subprocess
 import sys
-import sqlite3
-from tempfile import NamedTemporaryFile
 import time
+from datetime import datetime, timedelta
+from getpass import getpass
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from socket import gethostname
+from tempfile import NamedTemporaryFile
 from types import FrameType
-from typing import Dict, Iterator, List, Optional, Tuple, Union, cast
-from typing_extensions import TypedDict
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union, cast
 
 import appdirs
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import AuthorizedSession, Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from pcloud import PyCloud, api
 import piexif
 import requests
 import tomlkit
+from google.auth.transport.requests import AuthorizedSession, Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from pcloud import PyCloud, api
 from tqdm import tqdm
+from typing_extensions import TypedDict
 
 APP = "photo-uploader"
 lock_file = Path(f"/tmp/{APP}.lock")
@@ -52,8 +51,8 @@ logging.getLogger("pcloud").setLevel(logging.WARNING)
 DbType = TypedDict(
     "DbType",
     {
-        "mdate": datetime,
-        "conversion_timestamp": Optional[datetime],
+        "mdate": str,
+        "conversion_timestamp": str,
         "uploaded": bool,
     },
 )
@@ -263,7 +262,9 @@ class PhotoUploader:
     def __iter__(self) -> Iterator[Tuple[Path, List[str]]]:
         self._reload = True
         try:
-            inp_files = rglob(self.user_config["Directories"]["RAW"])
+            inp_files: Iterable[Path] = rglob(
+                self.user_config["Directories"]["RAW"]
+            )
         except FileNotFoundError:
             inp_files = []
         for file in sorted(inp_files):
@@ -273,11 +274,11 @@ class PhotoUploader:
             if self.end and c_time > self.end and not self.override:
                 continue
             try:
-                work_done = self.database.get(file.name, {})
+                work_done: Optional[DbType] = self.database.get(file.name)
             except Exception as error:
                 logger.error(error)
                 continue
-            if not work_done or self.override:
+            if work_done is None or self.override:
                 yield file, self.steps + ["copy_metadata"]
             else:
                 try:
@@ -336,7 +337,7 @@ class PhotoUploader:
         response = requests.get(url, headers=headers)
 
         if response.status_code == 200:
-            albums = response.json().get("albums", [])
+            albums: List[Dict[str, str]] = response.json().get("albums", [])
             for album in albums:
                 if album["title"] == self.album:
                     logger.info("Album already exists.")
@@ -350,21 +351,15 @@ class PhotoUploader:
             )
 
             if create_response.status_code == 200:
-                created_album_id = create_response.json()["id"]
+                created_album_id: str = create_response.json().get("id", "")
                 logger.info('Album "%s" created successfully.', self.album)
                 return created_album_id
-                logger.warning(
-                    "Failed to create album. Status code: %s",
-                    create_response.status_code,
-                )
-                logger.warning(create_response.text)
-                return ""
         else:
             logger.warning(
                 "Failed to fetch albums. Status code: %s", response.status_code
             )
             logger.warning(response.text)
-            return ""
+        return ""
 
     # Function to create SQLite database table if it doesn't exist
     def _create_database(self) -> None:
@@ -759,7 +754,9 @@ class PhotoUploader:
         if not config_file.is_file():
             config_file.write_text(ConfigText)
 
-        config = tomlkit.loads(config_file.read_text())
+        config: Dict[str, Dict[str, Union[str, bool]]] = tomlkit.loads(
+            config_file.read_text()
+        )
         for key, value in config.get("Directories", {}).items():
             config["Directories"][key] = (
                 input_path(f"Enter path to {key} directory [{value}]:")
@@ -817,13 +814,13 @@ def cli() -> None:
     parser.add_argument(
         "-s",
         "--start",
-        type=lambda d: datetime.fromisoformat(d),
+        type=datetime.fromisoformat,
         help="Start date for selecting photos",
     )
     parser.add_argument(
         "-e",
         "--end",
-        type=lambda d: datetime.fromisoformat(d),
+        type=datetime.fromisoformat,
         help="End date for selecting photos",
     )
     parser.add_argument(
@@ -880,12 +877,6 @@ def cli() -> None:
         help="Increase verbosity",
     )
     args = parser.parse_args()
-    if lock_file.is_file():
-        raise SystemExit(
-            f"{lock_file} exists, another process is already running."
-            " If you are sure that there is no other process running,"
-            " You can delete this file."
-        )
     logger.setLevel(max(logging.ERROR - (10 + args.v * 10), 10))
     if args.init is True:
         PhotoUploader.initialise(args.config, args.port)
@@ -895,6 +886,12 @@ def cli() -> None:
             args.config, port=args.port, override=True
         )
         return
+    if lock_file.is_file():
+        raise SystemExit(
+            f"{lock_file} exists, another process is already running."
+            " If you are sure that there is no other process running,"
+            " You can delete this file."
+        )
     lock_file.touch()
     if args.daemon is False:
         photos = PhotoUploader(
