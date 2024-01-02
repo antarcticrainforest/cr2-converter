@@ -452,15 +452,21 @@ class PhotoUploader:
         return None
 
     @classmethod
-    def _obtain_refresh_token(
-        self, config_path: Path, token_file: Path, port: int = 8080
+    def obtain_refresh_token(
+        cls,
+        config_path: Optional[Path] = None,
+        port: int = 8080,
+        override: bool = False,
     ) -> None:
         """Create a new refresh token."""
+        token_file = cls.user_data_dir / "photoupload.token"
+        if token_file.is_file() and override is False:
+            return
         flow = InstalledAppFlow.from_client_secrets_file(
-            config_path,
+            config_path or cls.user_config_dir / "google_auth.json",
             scopes=["https://www.googleapis.com/auth/photoslibrary"],
         )
-        credentials = flow.run_local_server(port=port)
+        credentials = flow.run_local_server(port=port, open_browser=False)
         # Access token
         token_file.write_text(credentials.refresh_token)
         token_file.chmod(0o600)
@@ -786,13 +792,11 @@ class PhotoUploader:
             config["Pcloud"]["use_pcloud"] = False
         config_file.write_text(tomlkit.dumps(config))
         if google_credentials is not None:
-            token_file = cls.user_data_dir / "photoupload.token"
             (cls.user_config_dir / "google_auth.json").write_text(
                 google_credentials.read_text()
             )
             (cls.user_config_dir / "google_auth.json").chmod(0o600)
-            if not token_file.exists():
-                cls._obtain_refresh_token(google_credentials, token_file, port)
+            cls.obtain_refresh_token(google_credentials, port)
 
 
 def cli() -> None:
@@ -830,9 +834,16 @@ def cli() -> None:
         default="Canon",
     )
     parser.add_argument(
+        "-i",
         "--init",
         action="store_true",
         help="Initialise the google oauth procedure.",
+    )
+    parser.add_argument(
+        "-r",
+        "--refresh",
+        action="store_true",
+        help="Create a new google photos refresh token.",
     )
     parser.add_argument(
         "--port",
@@ -878,6 +889,11 @@ def cli() -> None:
     logger.setLevel(max(logging.ERROR - (10 + args.v * 10), 10))
     if args.init is True:
         PhotoUploader.initialise(args.config, args.port)
+        return
+    if args.refresh is True:
+        PhotoUploader.obtain_refresh_token(
+            args.config, port=args.port, override=True
+        )
         return
     lock_file.touch()
     if args.daemon is False:
